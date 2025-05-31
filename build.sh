@@ -2,111 +2,166 @@
 
 set -e  # Exit on any error
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+#===============================================================================
+# Android ROM Build Script
+# Usage: ./build_rom.sh [manifest_url] [branch] [device] [rom_name] [build_type] [remove_prebuilts]
+#===============================================================================
 
-# Print success messages
-success_msg() {
-    echo -e "${GREEN}=============${NC}"
-    echo -e "${GREEN}$1${NC}"
-    echo -e "${GREEN}=============${NC}"
+# Color definitions
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly CYAN='\033[0;36m'
+readonly BOLD='\033[1m'
+readonly NC='\033[0m'
+
+# Build configuration
+readonly ROM_MANIFEST_URL="${1:-https://github.com/LineageOS/android.git}"
+readonly ROM_BRANCH="${2:-lineage-18.1}"
+readonly DEVICE_NAME="${3:-ASUS_Z01KD_1}"
+readonly ROM_NAME="${4:-lineage}"
+readonly BUILD_TYPE="${5:-userdebug}"
+readonly REMOVE_PREBUILTS="${6:-no}"
+
+#===============================================================================
+# Helper Functions
+#===============================================================================
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-# Default build config
-ROM_MANIFEST_URL=${1:-"https://github.com/LineageOS/android.git"}
-ROM_BRANCH=${2:-"lineage-18.1"}
-DEVICE_NAME=${3:-"ASUS_Z01KD_1"}
-ROM_NAME=${4:-"lineage"}
-BUILD_TYPE=${5:-"userdebug"}
-REMOVE_PREBUILTS=${6:-"no"}
-KERNEL_REPO=${7:-"https://github.com/example/kernel_asus_msm8998.git"}
-KERNEL_BRANCH=${8:-"lineage-18.1"}
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
 
-echo -e "${CYAN}Starting build for ${DEVICE_NAME} with ${ROM_NAME} on ${ROM_BRANCH}${NC}"
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
-# Optional: remove prebuilts
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+print_header() {
+    echo -e "\n${CYAN}${BOLD}Android ROM Build System${NC}"
+    echo -e "${CYAN}========================${NC}\n"
+}
+
+print_config() {
+    echo -e "${BOLD}Build Configuration:${NC}"
+    echo -e "  ROM Manifest: ${ROM_MANIFEST_URL}"
+    echo -e "  Branch: ${ROM_BRANCH}"
+    echo -e "  Device: ${DEVICE_NAME}"
+    echo -e "  ROM Name: ${ROM_NAME}"
+    echo -e "  Build Type: ${BUILD_TYPE}"
+    echo -e "  Remove Prebuilts: ${REMOVE_PREBUILTS}"
+    echo
+}
+
+#===============================================================================
+# Main Build Process
+#===============================================================================
+
+print_header
+print_config
+
+# Step 1: Handle prebuilts
+log_info "Managing prebuilts directory..."
 if [[ "$REMOVE_PREBUILTS" == "yes" ]]; then
-    echo -e "${YELLOW}Removing prebuilts directory...${NC}"
-    rm -rf prebuilts
-    success_msg "Prebuilts removed!"
+    rm -rf prebuilts 2>/dev/null || true
+    log_success "Prebuilts directory removed"
 else
-    echo -e "${YELLOW}Skipping prebuilts removal.${NC}"
-    success_msg "Prebuilts removal skipped!"
+    log_info "Keeping existing prebuilts directory"
 fi
 
-# Install required cross-compiler
-echo -e "${BLUE}Checking for required cross-compiler...${NC}"
-if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
-    echo -e "${YELLOW}Installing gcc-aarch64-linux-gnu...${NC}"
-    sudo apt update && sudo apt install -y gcc-aarch64-linux-gnu
-    success_msg "Cross-compiler installed"
+# Step 2: Initialize repository
+log_info "Initializing ROM repository..."
+if repo init -u "$ROM_MANIFEST_URL" -b "$ROM_BRANCH" --git-lfs --quiet; then
+    log_success "Repository initialized"
 else
-    success_msg "Cross-compiler already available"
-fi
-
-# Init repo
-echo -e "${BLUE}Initializing ROM repo...${NC}"
-repo init -u "$ROM_MANIFEST_URL" -b "$ROM_BRANCH" --git-lfs
-success_msg "Repo initialized"
-
-# Local manifests
-echo -e "${BLUE}Setting up local manifests...${NC}"
-rm -rf .repo/local_manifests
-mkdir -p .repo/local_manifests
-cp scripts/roomservice.xml .repo/local_manifests/
-success_msg "Local manifests ready"
-
-# Sync source
-echo -e "${BLUE}Syncing source...${NC}"
-repo sync -c --no-clone-bundle --optimized-fetch --prune --force-sync -j$(nproc)
-success_msg "Source synced"
-
-# Clone and build kernel
-echo -e "${CYAN}Cloning kernel source: $KERNEL_REPO ($KERNEL_BRANCH)...${NC}"
-git clone --depth=1 -b "$KERNEL_BRANCH" "$KERNEL_REPO" kernel/temp
-success_msg "Kernel source cloned"
-
-echo -e "${BLUE}Building kernel...${NC}"
-export ARCH=arm64
-export SUBARCH=arm64
-export CROSS_COMPILE=aarch64-linux-gnu-
-KERNEL_DIR=$(pwd)/kernel/temp
-cd "$KERNEL_DIR"
-
-# Replace this with your defconfig name
-make ${DEVICE_NAME}_defconfig || make defconfig
-
-make -j$(nproc)
-
-OUT_IMAGE="arch/arm64/boot/Image.gz-dtb"
-if [[ -f "$OUT_IMAGE" ]]; then
-    echo -e "${BLUE}Copying kernel to device tree...${NC}"
-    cp "$OUT_IMAGE" ../../../device/*/"$DEVICE_NAME"/kernel
-    cd ../../..
-    success_msg "Kernel built and integrated"
-else
-    echo -e "${RED}Kernel build failed or output not found: $OUT_IMAGE${NC}"
+    log_error "Failed to initialize repository"
     exit 1
 fi
 
-# Build environment
-echo -e "${BLUE}Setting up build environment...${NC}"
+# Step 3: Setup local manifests
+log_info "Setting up local manifests..."
+rm -rf .repo/local_manifests 2>/dev/null || true
+mkdir -p .repo/local_manifests
+
+if [[ -f "scripts/roomservice.xml" ]]; then
+    cp scripts/roomservice.xml .repo/local_manifests/
+    log_success "Local manifests configured"
+else
+    log_warning "roomservice.xml not found, skipping local manifest setup"
+fi
+
+# Step 4: Sync source code
+log_info "Syncing source code (using $(nproc) jobs)..."
+if repo sync -c --no-clone-bundle --optimized-fetch --prune --force-sync -j$(nproc) --quiet; then
+    log_success "Source code synchronized"
+else
+    log_error "Failed to sync source code"
+    exit 1
+fi
+
+# Step 5: Setup build environment
+log_info "Setting up build environment..."
 source build/envsetup.sh
-lunch "${ROM_NAME}_${DEVICE_NAME}-${BUILD_TYPE}"
-success_msg "Environment ready"
 
-# Build ROM
-echo -e "${YELLOW}Building ROM...${NC}"
-make -j$(nproc) bacon
-success_msg "ROM built successfully"
+log_info "Configuring lunch: ${ROM_NAME}_${DEVICE_NAME}-${BUILD_TYPE}"
+if lunch "${ROM_NAME}_${DEVICE_NAME}-${BUILD_TYPE}"; then
+    log_success "Build environment ready"
+else
+    log_error "Failed to configure build environment"
+    exit 1
+fi
 
-# Pull ROM
+# Step 6: Build ROM
+log_info "Starting ROM build (this may take several hours)..."
+BUILD_START_TIME=$(date +%s)
+
+if make -j$(nproc) bacon; then
+    BUILD_END_TIME=$(date +%s)
+    BUILD_DURATION=$((BUILD_END_TIME - BUILD_START_TIME))
+    BUILD_TIME_FORMATTED=$(printf "%02d:%02d:%02d" $((BUILD_DURATION/3600)) $((BUILD_DURATION%3600/60)) $((BUILD_DURATION%60)))
+    log_success "ROM built successfully in $BUILD_TIME_FORMATTED"
+else
+    log_error "ROM build failed"
+    exit 1
+fi
+
+# Step 7: Retrieve built ROM
+log_info "Locating built ROM..."
 BUILT_ROM_PATH="out/target/product/${DEVICE_NAME}/${ROM_NAME}*.zip"
-echo -e "${CYAN}Trying to pull ROM: $BUILT_ROM_PATH${NC}"
-crave pull "$BUILT_ROM_PATH" || { echo -e "${RED}Failed to pull ROM zip.${NC}"; exit 1; }
-success_msg "ROM pulled successfully!"
+
+if ls $BUILT_ROM_PATH 1> /dev/null 2>&1; then
+    ROM_FILE=$(ls $BUILT_ROM_PATH | head -n1)
+    ROM_SIZE=$(du -h "$ROM_FILE" | cut -f1)
+    log_info "Found ROM: $(basename "$ROM_FILE") (${ROM_SIZE})"
+    
+    if command -v crave >/dev/null 2>&1; then
+        log_info "Pulling ROM with crave..."
+        if crave pull "$BUILT_ROM_PATH"; then
+            log_success "ROM retrieved via crave"
+        else
+            log_warning "Crave pull failed, ROM available locally"
+        fi
+    else
+        log_info "ROM available at: $ROM_FILE"
+    fi
+    
+    log_success "Build completed successfully!"
+else
+    log_error "Built ROM not found at expected location"
+    exit 1
+fi
+
+echo -e "\n${GREEN}${BOLD}Build Summary:${NC}"
+echo -e "${GREEN}✓ ROM: ${ROM_NAME} for ${DEVICE_NAME}${NC}"
+echo -e "${GREEN}✓ Build time: ${BUILD_TIME_FORMATTED}${NC}"
+if [[ -n "${ROM_FILE:-}" ]]; then
+    echo -e "${GREEN}✓ Output: $(basename "$ROM_FILE") (${ROM_SIZE})${NC}"
+fi
+echo
