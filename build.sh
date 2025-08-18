@@ -58,9 +58,13 @@ fi
 
 # ------------- REPO INIT -------------
 section "Repo Initialization"
-info "Initializing repo..."
-repo init -u "$ROM_MANIFEST_URL" -b "$ROM_BRANCH" --git-lfs
-success "Repo initialized!"
+if [[ ! -d ".repo" ]]; then
+    info "Repo not initialized. Running repo init..."
+    repo init -u "$ROM_MANIFEST_URL" -b "$ROM_BRANCH" --git-lfs
+    success "Repo initialized!"
+else
+    info "Repo already initialized. Skipping repo init."
+fi
 
 # ------------- LOCAL MANIFESTS -------------
 section "Local Manifests Setup"
@@ -74,10 +78,14 @@ else
 fi
 
 # ------------- REPO SYNC -------------
-section "Repository Sync"
-info "Syncing sources..."
-repo sync -c --no-clone-bundle --optimized-fetch --prune --force-sync -j"$(nproc --all)"
-success "Repo sync completed!"
+if [[ ! -d "build" ]]; then
+    section "Repository Sync"
+    info "No build directory found. Running repo sync..."
+    repo sync -c --no-clone-bundle --optimized-fetch --prune --force-sync -j"$(nproc --all)"
+    success "Repo sync completed!"
+else
+    info "Sources already synced. Skipping repo sync."
+fi
 
 # ------------- BUILD ENVIRONMENT -------------
 section "Build Environment Setup"
