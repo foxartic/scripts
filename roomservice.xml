@@ -1,4 +1,4 @@
- <?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <manifest>
 
     <!-- Device tree -->
@@ -13,6 +13,7 @@
         name="foxartic/vendor_asus_Z01K"
         path="vendor/asus/Z01K"
         remote="github"
-        revision="master" />
+        revision="main" />
+
 
 </manifest>
