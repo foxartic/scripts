@@ -1,0 +1,18 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+
+    <!-- Device tree -->
+    <project
+        name="foxartic/device_asus_Z01K"
+        path="device/asus/Z01K"
+        remote="github"
+        revision="main" />
+
+    <!-- Vendor tree -->
+    <project
+        name="foxartic/vendor_asus_Z01K"
+        path="vendor/asus/Z01K"
+        remote="github"
+        revision="master" />
+
+</manifest>
