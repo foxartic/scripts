@@ -89,7 +89,19 @@ fi
 
 # ------------- BUILD ENVIRONMENT -------------
 section "Build Environment Setup"
+
+SOURCE_ROOT="$(dirname "$(realpath "$0")")/.."
+
+if [[ ! -f "$SOURCE_ROOT/build/envsetup.sh" ]]; then
+    error "build/envsetup.sh not found! Make sure you are in the ROM source root."
+    exit 1
+fi
+
+# Go to source root so lunch works properly
+cd "$SOURCE_ROOT"
+
 source build/envsetup.sh
+
 if lunch "${ROM_NAME}_${DEVICE_NAME}-${BUILD_TYPE}"; then
     success "Build environment configured!"
 else
