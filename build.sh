@@ -5,7 +5,8 @@
 #   Local Machine Version
 # =========================
 
-set -e  # Exit on error
+set -e
+set -o pipefail  # Catch pipe errors
 
 # ------------- COLORS -------------
 RED='\033[0;31m'
@@ -68,7 +69,6 @@ fi
 
 # ------------- LOCAL MANIFESTS -------------
 section "Local Manifests Setup"
-rm -rf .repo/local_manifests
 mkdir -p .repo/local_manifests
 if cp scripts/roomservice.xml .repo/local_manifests/; then
     success "Local manifests set up!"
@@ -78,41 +78,38 @@ else
 fi
 
 # ------------- REPO SYNC -------------
-if [[ ! -d "build" ]]; then
-    section "Repository Sync"
-    info "No build directory found. Running repo sync..."
-    repo sync -c --no-clone-bundle --optimized-fetch --prune --force-sync -j"$(nproc --all)"
-    success "Repo sync completed!"
-else
-    info "Sources already synced. Skipping repo sync."
-fi
+section "Repository Sync"
+info "Syncing source tree..."
+repo sync -c --no-clone-bundle --optimized-fetch --prune --force-sync -j"$(nproc --all)"
+success "Repo sync completed!"
 
 # ------------- BUILD ENVIRONMENT -------------
 section "Build Environment Setup"
 
-SOURCE_ROOT="$(dirname "$(realpath "$0")")/.."
+SOURCE_ROOT="$(realpath "$(dirname "$0")")/.."
+cd "$SOURCE_ROOT" || { error "Failed to cd to source root"; exit 1; }
 
-if [[ ! -f "$SOURCE_ROOT/build/envsetup.sh" ]]; then
+if [[ ! -f "build/envsetup.sh" ]]; then
     error "build/envsetup.sh not found! Make sure you are in the ROM source root."
     exit 1
 fi
 
-# Go to source root so lunch works properly
-cd "$SOURCE_ROOT"
-
 source build/envsetup.sh
 
-if lunch "${ROM_NAME}_${DEVICE_NAME}-${BUILD_TYPE}"; then
+# Check lunch combo
+LUNCH_COMBO="${ROM_NAME}_${DEVICE_NAME}-${BUILD_TYPE}"
+info "Running lunch: ${LUNCH_COMBO}"
+if lunch "${LUNCH_COMBO}"; then
     success "Build environment configured!"
 else
-    error "Lunch combo failed! Check your device/ROM combo."
+    error "Lunch combo failed! Make sure device makefile and PRODUCT_DEVICE match ${DEVICE_NAME}."
     exit 1
 fi
 
 # ------------- BUILD ROM -------------
 section "ROM Compilation"
 info "Building ROM... This may take a while ⏳"
-if make -j"$(nproc)" bacon; then
+if mka bacon -j"$(nproc)"; then
     success "ROM built successfully!"
 else
     error "Build failed!"
@@ -121,10 +118,12 @@ fi
 
 # ------------- PULL BUILT ROM -------------
 section "ROM Retrieval"
-BUILT_ROM_PATH="out/target/product/${DEVICE_NAME}/${ROM_NAME}*.zip"
-info "Looking for built ROM at: ${BUILT_ROM_PATH}"
+ROM_PATTERN="out/target/product/${DEVICE_NAME}/${ROM_NAME}-*.zip"
+BUILT_ROM_PATH=$(ls ${ROM_PATTERN} 2>/dev/null | tail -n1)
 
-if ls $BUILT_ROM_PATH 1> /dev/null 2>&1; then
+info "Looking for built ROM at: ${ROM_PATTERN}"
+
+if [[ -f "$BUILT_ROM_PATH" ]]; then
     success "ROM available at: ${BUILT_ROM_PATH} 🎉"
 else
     error "ROM zip file not found!"
