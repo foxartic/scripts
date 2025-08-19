@@ -30,7 +30,7 @@ section() {
 # ------------- ARGUMENTS & DEFAULTS -------------
 ROM_MANIFEST_URL="${1:-https://github.com/LineageOS/android.git}"
 ROM_BRANCH="${2:-lineage-15.0}"
-DEVICE_NAME="${3:-Z01KD_1}"
+DEVICE_NAME="${3:-Z01K}"
 ROM_NAME="${4:-lineage}"
 BUILD_TYPE="${5:-userdebug}"
 REMOVE_PREBUILTS="${6:-no}"  # 'yes' or 'no'
