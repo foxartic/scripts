@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # ==========================================================
-#                ANDROID ROM BUILD SCRIPT
-#        Clean, Beautified, No Colors, No Emojis
-#   Includes:
-#     - Automatic Java 8 setup (persistent)
-#     - Automatic Bison / Flex prebuilts fix
-#     - Crave-safe sync
-#     - Oreo-ready environment
+#                  ANDROID ROM BUILD SCRIPT
+#            Clean, Beautified, Crave-Safe Edition
+#   Features:
+#     - Safe Java 8 setup (no downloads)
+#     - Safe Bison & Flex prebuilts fix (no downloads)
+#     - Crave-aware PATH setup
+#     - Crave optimized sync support
 # ==========================================================
 
 set -e
@@ -37,28 +37,24 @@ REMOVE_PREBUILTS="${6:-yes}"
 section "Java 8 Environment Setup"
 # ==========================================================
 
-JAVA_VER=$(java -version 2>&1 | head -n1 | grep '1.8')
-
-if [[ -z "$JAVA_VER" ]]; then
-    warn "Java 8 not detected. Installing temporary Java 8..."
-
-    mkdir -p $HOME/.java8
-    cd $HOME/.java8
-
-    if [[ ! -d "$HOME/.java8/jdk8u412" ]]; then
-        info "Downloading BellSoft Java 8..."
-        wget -q https://download.bell-sw.com/java/8u412+9/bellsoft-jdk8u412+9-linux-x64.tar.gz
-        tar -xf bellsoft-jdk8u412+9-linux-x64.tar.gz
-    fi
-
-    export JAVA_HOME="$HOME/.java8/jdk8u412"
-    export PATH="$JAVA_HOME/bin:$PATH"
-
-    success "Java 8 activated."
+# Crave provides Java 8 path: /usr/lib/jvm/java-8-openjdk-amd64
+if [[ -n "$CRAVE_BUILD" ]]; then
+    info "Crave environment detected. Using Crave's built-in Java 8."
+    export JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64"
 else
-    success "Java 8 already installed."
+    info "Local environment detected. Using system Java."
+    export JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")
 fi
 
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# Validate Java 8 presence
+if ! java -version 2>&1 | grep -q "1.8"; then
+    error "Java 8 not detected. Install Java 8 on your system."
+    exit 1
+fi
+
+success "Java 8 is correctly set."
 java -version
 javac -version
 
@@ -77,11 +73,11 @@ section "Prebuilts Cleanup"
 # ==========================================================
 
 if [[ "$REMOVE_PREBUILTS" == "yes" ]]; then
-    warn "Removing existing prebuilts/ directory..."
+    warn "Removing existing prebuilts directory..."
     rm -rf prebuilts
-    success "Prebuilts directory removed."
+    success "Prebuilts cleaned."
 else
-    info "Prebuilts removal skipped."
+    info "Skipping prebuilts removal."
 fi
 
 # ==========================================================
@@ -89,7 +85,7 @@ section "Repo Initialization"
 # ==========================================================
 
 repo init -u "$ROM_MANIFEST_URL" -b "$ROM_BRANCH" --git-lfs
-success "Repo initialized."
+success "Repo initialized successfully."
 
 # ==========================================================
 section "Local Manifests Setup"
@@ -101,36 +97,43 @@ mkdir -p .repo/local_manifests
 if cp scripts/roomservice.xml .repo/local_manifests/; then
     success "roomservice.xml applied."
 else
-    error "roomservice.xml not found in scripts/. Exiting."
+    error "roomservice.xml missing in scripts/. Exiting."
     exit 1
 fi
 
 # ==========================================================
-section "Fixing Missing Bison & Flex (Oreo Prebuilts)"
+section "Fixing Bison & Flex (Crave-Safe)"
 # ==========================================================
 
-BISON_DIR="prebuilts/misc/linux-x86/bison"
-FLEX_DIR="prebuilts/misc/linux-x86/flex"
+SYSTEM_BISON=$(command -v bison || true)
+SYSTEM_FLEX=$(command -v flex || true)
 
-mkdir -p $BISON_DIR
-mkdir -p $FLEX_DIR
+if [[ -n "$SYSTEM_BISON" && -n "$SYSTEM_FLEX" ]]; then
+    info "System bison and flex detected. Creating prebuilts wrappers."
 
-if [[ ! -f "$BISON_DIR/bison" ]]; then
-    warn "Bison prebuilts missing. Installing..."
-    wget -q https://archive.org/download/aosp_prebuilts/bison-2.7-linux-x86.tar.gz
-    tar -xf bison-2.7-linux-x86.tar.gz -C $BISON_DIR --strip-components=1
-    success "Bison installed."
+    mkdir -p prebuilts/misc/linux-x86/bison
+    mkdir -p prebuilts/misc/linux-x86/flex
+
+    # Wrapper calling system bison
+    cat <<EOT > prebuilts/misc/linux-x86/bison/bison
+#!/bin/bash
+exec $SYSTEM_BISON "\$@"
+EOT
+
+    # Wrapper calling system flex
+    cat <<EOT > prebuilts/misc/linux-x86/flex/flex
+#!/bin/bash
+exec $SYSTEM_FLEX "\$@"
+EOT
+
+    chmod +x prebuilts/misc/linux-x86/bison/bison
+    chmod +x prebuilts/misc/linux-x86/flex/flex
+
+    success "Bison & Flex wrappers ready."
 else
-    success "Bison already present."
-fi
-
-if [[ ! -f "$FLEX_DIR/flex" ]]; then
-    warn "Flex prebuilts missing. Installing..."
-    wget -q https://archive.org/download/aosp_prebuilts/flex-2.5.39-linux-x86.tar.gz
-    tar -xf flex-2.5.39-linux-x86.tar.gz -C $FLEX_DIR --strip-components=1
-    success "Flex installed."
-else
-    success "Flex already present."
+    error "bison or flex missing! Install using:"
+    error "sudo apt install bison flex"
+    exit 1
 fi
 
 # ==========================================================
@@ -138,10 +141,10 @@ section "Syncing Source"
 # ==========================================================
 
 if [[ -f /opt/crave/resync.sh ]]; then
-    info "Using Crave's optimized resync.sh..."
+    info "Using Crave optimized resync..."
     /opt/crave/resync.sh
 else
-    warn "resync.sh not found. Using standard repo sync."
+    warn "Crave resync.sh not found. Using standard repo sync."
     repo sync -c --no-clone-bundle --optimized-fetch --prune --force-sync -j"$(nproc)"
 fi
 
@@ -165,7 +168,7 @@ info "Starting the build. This may take a long time."
 if make -j"$(nproc)" bacon; then
     success "ROM built successfully."
 else
-    error "Build failed. Exiting."
+    error "Build failed."
     exit 1
 fi
 
@@ -178,7 +181,7 @@ ZIP_PATH="out/target/product/${DEVICE}/${ROM}*.zip"
 if crave pull $ZIP_PATH; then
     success "ROM ZIP pulled successfully."
 else
-    error "Could not locate ROM ZIP."
+    error "Cannot find ROM ZIP."
     exit 1
 fi
 
